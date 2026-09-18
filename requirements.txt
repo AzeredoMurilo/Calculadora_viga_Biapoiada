@@ -4,3 +4,4 @@ pandas
 matplotlib
 numpy
 fpdf2
+plotly
