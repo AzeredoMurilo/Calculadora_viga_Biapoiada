@@ -68,7 +68,7 @@ I_val = I_input * 1e-8
 # 3. TELA PRINCIPAL
 # ==========================================
 st.title("🏗️ Aplicativo de Análise de Vigas")
-st.write("Esforço Cortante, Momento Fletor e Linha Elástica via Macaulay (SymPy)")
+st.write("Esforço Cortante, Momento Fletor e Linha Elástica via Macaulay")
 
 st.subheader("Configuração da Estrutura")
 col_comp, col_tipo = st.columns([1, 2])
