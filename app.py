@@ -4,6 +4,8 @@ import sympy as sp
 import numpy as np
 import matplotlib.pyplot as plt
 from sympy.physics.continuum_mechanics.beam import Beam
+import io
+from fpdf import FPDF
 
 # Configuração da página do Streamlit
 st.set_page_config(page_title="Análise de Vigas", layout="wide")
@@ -51,16 +53,28 @@ st.sidebar.markdown("---")
 st.sidebar.header("2. Propriedades da Seção")
 E_input = st.sidebar.number_input("Módulo de Elasticidade E (GPa)", value=200.0, step=10.0)
 tipo_secao = st.sidebar.selectbox("Geometria da Seção", 
-    ["Entrada Manual", "Perfil I / H", "Tubo Retangular / Quadrado", "Tubo Circular"]
+    ["Entrada Manual", "Barra Maciça Retangular", "Barra Maciça Circular", "Perfil I / H", "Tubo Retangular / Quadrado", "Tubo Circular"]
 )
 
-# Precisamos do H (Altura) para achar o 'c' (distância até a fibra extrema) e calcular a tensão
 H_val = 200.0 
 I_input = 800.0 
 
 if tipo_secao == "Entrada Manual":
     I_input = st.sidebar.number_input("Inércia I (cm⁴)", value=800.0, step=10.0)
-    H_val = st.sidebar.number_input("Altura Total da Seção (mm)", value=200.0, step=10.0, help="Usado para calcular a Tensão Máxima")
+    H_val = st.sidebar.number_input("Altura Total da Seção (mm)", value=200.0, step=10.0)
+
+elif tipo_secao == "Barra Maciça Retangular":
+    H_val = st.sidebar.number_input("Altura H (mm)", value=100.0, step=10.0)
+    B = st.sidebar.number_input("Base B (mm)", value=50.0, step=10.0)
+    H_c, B_c = H_val/10, B/10
+    I_input = (B_c * H_c**3)/12
+    st.sidebar.info(f"📐 Inércia Calculada: {I_input:.2f} cm⁴")
+
+elif tipo_secao == "Barra Maciça Circular":
+    H_val = st.sidebar.number_input("Diâmetro D (mm)", value=50.0, step=10.0)
+    D_c = H_val/10
+    I_input = (np.pi * D_c**4) / 64
+    st.sidebar.info(f"📐 Inércia Calculada: {I_input:.2f} cm⁴")
 
 elif tipo_secao == "Perfil I / H":
     H_val = st.sidebar.number_input("Altura Total H (mm)", value=200.0, step=10.0)
@@ -119,7 +133,53 @@ else:
     st.info("Nenhuma carga inserida. Use o menu lateral para adicionar.")
 
 # ==========================================
-# 4. CÁLCULO E PLOTAGEM (BACKEND)
+# 4. FUNÇÃO DE GERAÇÃO DE PDF
+# ==========================================
+def gerar_relatorio_pdf(fig_graficos, df_cargas, reacoes_texto, metricas_texto):
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Arial", 'B', 16)
+    pdf.cell(200, 10, txt="Relatorio de Analise Estrutural", ln=True, align='C')
+    
+    # Propriedades da Seção
+    pdf.set_font("Arial", 'B', 12)
+    pdf.ln(10)
+    pdf.cell(200, 10, txt="1. Propriedades da Secao Transversal:", ln=True)
+    pdf.set_font("Arial", '', 11)
+    pdf.cell(200, 8, txt=f"Tipo de Secao: {tipo_secao}", ln=True)
+    pdf.cell(200, 8, txt=f"Modulo de Elasticidade (E): {E_input} GPa", ln=True)
+    pdf.cell(200, 8, txt=f"Momento de Inercia (I): {I_input:.2f} cm^4", ln=True)
+    pdf.cell(200, 8, txt=f"Altura Total (H): {H_val:.2f} mm", ln=True)
+
+    # Reações
+    pdf.set_font("Arial", 'B', 12)
+    pdf.ln(5)
+    pdf.cell(200, 10, txt="2. Reacoes de Apoio Encontradas:", ln=True)
+    pdf.set_font("Arial", '', 11)
+    for r in reacoes_texto:
+        pdf.cell(200, 8, txt=r, ln=True)
+
+    # Métricas Máximas
+    pdf.set_font("Arial", 'B', 12)
+    pdf.ln(5)
+    pdf.cell(200, 10, txt="3. Esforcos e Deslocamentos Maximos Absolutos:", ln=True)
+    pdf.set_font("Arial", '', 11)
+    for m in metricas_texto:
+        pdf.cell(200, 8, txt=m, ln=True)
+    
+    # Salvar gráficos na memória e jogar no PDF
+    img_buffer = io.BytesIO()
+    fig_graficos.savefig(img_buffer, format='png', bbox_inches='tight')
+    img_buffer.seek(0)
+    pdf.add_page() # Gráficos na segunda página para caber bem
+    pdf.set_font("Arial", 'B', 12)
+    pdf.cell(200, 10, txt="4. Diagramas Estruturais (V, M e Linha Elastica):", ln=True)
+    pdf.image(img_buffer, x=10, y=30, w=190)
+    
+    return pdf.output(dest='S').encode('latin-1')
+
+# ==========================================
+# 5. CÁLCULO E PLOTAGEM (BACKEND)
 # ==========================================
 st.write("---")
 
@@ -128,10 +188,8 @@ if st.button("🚀 Calcular Estrutura") and len(st.session_state.cargas_salvas) 
     with st.spinner("Processando tensores e integrais de Macaulay..."):
         E, I = sp.symbols('E I')
         R_A, R_B, M_A = sp.symbols('R_A R_B M_A')
-        
         viga = Beam(comprimento, E, I)
         
-        # Apoios
         reacoes_desconhecidas = []
         if tipo_viga == "Biapoiada nas extremidades":
             viga.bc_deflection = [(0, 0), (comprimento, 0)]
@@ -139,18 +197,14 @@ if st.button("🚀 Calcular Estrutura") and len(st.session_state.cargas_salvas) 
             viga.apply_load(R_B, comprimento, -1)
             reacoes_desconhecidas = [R_A, R_B]
         elif tipo_viga == "Engastada à Esquerda (x=0)":
-            viga.bc_deflection = [(0, 0)]
-            viga.bc_slope = [(0, 0)]
-            viga.apply_load(R_A, 0, -1)
-            viga.apply_load(M_A, 0, -2)
+            viga.bc_deflection = [(0, 0)]; viga.bc_slope = [(0, 0)]
+            viga.apply_load(R_A, 0, -1); viga.apply_load(M_A, 0, -2)
             reacoes_desconhecidas = [R_A, M_A]
         elif tipo_viga == "Biapoiada Personalizada (com ou sem balanço)":
             viga.bc_deflection = [(pos_apoio1, 0), (pos_apoio2, 0)]
-            viga.apply_load(R_A, pos_apoio1, -1)
-            viga.apply_load(R_B, pos_apoio2, -1)
+            viga.apply_load(R_A, pos_apoio1, -1); viga.apply_load(R_B, pos_apoio2, -1)
             reacoes_desconhecidas = [R_A, R_B]
 
-        # Cargas
         for carga in st.session_state.cargas_salvas:
             tipo, pi, pf = carga["Tipo"], carga["Posição Inicial"], carga["Posição Final"]
             if tipo == "Pontual": viga.apply_load(carga["Valor Numérico"], pi, -1)
@@ -167,56 +221,59 @@ if st.button("🚀 Calcular Estrutura") and len(st.session_state.cargas_salvas) 
                     if w2 != 0: viga.apply_load(-w2, pf, 0)
                     if q != 0: viga.apply_load(-q, pf, 1)
         
-        # Resolução
         viga.solve_for_reaction_loads(*reacoes_desconhecidas)
         reacoes = viga.reaction_loads
         
-        # Gerando Equações
         x = sp.Symbol('x')
         eq_cortante = viga.shear_force().rewrite(sp.Piecewise)
         eq_momento = viga.bending_moment().rewrite(sp.Piecewise)
-        eq_rotacao = viga.slope().subs({E: E_val, I: I_val}).rewrite(sp.Piecewise)  # NOVA: Rotação (θ)
+        eq_rotacao = viga.slope().subs({E: E_val, I: I_val}).rewrite(sp.Piecewise) 
         eq_flecha = viga.deflection().subs({E: E_val, I: I_val}).rewrite(sp.Piecewise)
         
-        # Funções Lambda Numéricas
         func_V = sp.lambdify(x, eq_cortante, 'numpy')
         func_M = sp.lambdify(x, eq_momento, 'numpy')
         func_theta = sp.lambdify(x, eq_rotacao, 'numpy')
         func_y = sp.lambdify(x, eq_flecha, 'numpy')
         
-        # Vetorização
         x_vetor = np.linspace(0, float(comprimento), 800) 
         
         V_vetor = np.ones_like(x_vetor) * func_V(x_vetor) if np.isscalar(func_V(x_vetor)) else func_V(x_vetor)
         M_vetor = np.ones_like(x_vetor) * func_M(x_vetor) if np.isscalar(func_M(x_vetor)) else func_M(x_vetor)
-        
         theta_vetor = np.ones_like(x_vetor) * func_theta(x_vetor) if np.isscalar(func_theta(x_vetor)) else func_theta(x_vetor)
-        
         y_vetor_m = np.ones_like(x_vetor) * func_y(x_vetor) if np.isscalar(func_y(x_vetor)) else func_y(x_vetor)
         y_vetor_mm = y_vetor_m * 1000 
         
-        # --- EXIBIÇÃO DE RESULTADOS (MÁXIMOS E REAÇÕES) ---
-        st.write("### Reações de Apoio")
+        # --- PREPARANDO DADOS PARA TELA E PDF ---
+        txt_reacoes = []
         col_r1, col_r2, col_r3 = st.columns(3)
         if tipo_viga == "Engastada à Esquerda (x=0)":
-            col_r1.success(f"**R_A (x=0):** {float(reacoes[R_A]):.2f} kN")
-            col_r2.warning(f"**M_A (Engaste):** {float(reacoes[M_A]):.2f} kN.m")
+            txt_reacoes.append(f"R_A (x=0): {float(reacoes[R_A]):.2f} kN")
+            txt_reacoes.append(f"M_A (Engaste): {float(reacoes[M_A]):.2f} kN.m")
+            col_r1.success(f"**{txt_reacoes[0]}**")
+            col_r2.warning(f"**{txt_reacoes[1]}**")
         elif tipo_viga == "Biapoiada Personalizada (com ou sem balanço)":
-            col_r1.success(f"**R_A (x={pos_apoio1}):** {float(reacoes[R_A]):.2f} kN")
-            col_r2.success(f"**R_B (x={pos_apoio2}):** {float(reacoes[R_B]):.2f} kN")
+            txt_reacoes.append(f"R_A (x={pos_apoio1}): {float(reacoes[R_A]):.2f} kN")
+            txt_reacoes.append(f"R_B (x={pos_apoio2}): {float(reacoes[R_B]):.2f} kN")
+            col_r1.success(f"**{txt_reacoes[0]}**")
+            col_r2.success(f"**{txt_reacoes[1]}**")
         else:
-            col_r1.success(f"**R_A (x=0):** {float(reacoes[R_A]):.2f} kN")
-            col_r2.success(f"**R_B (x={comprimento}):** {float(reacoes[R_B]):.2f} kN")
+            txt_reacoes.append(f"R_A (x=0): {float(reacoes[R_A]):.2f} kN")
+            txt_reacoes.append(f"R_B (x={comprimento}): {float(reacoes[R_B]):.2f} kN")
+            col_r1.success(f"**{txt_reacoes[0]}**")
+            col_r2.success(f"**{txt_reacoes[1]}**")
 
-        # CÁLCULOS DOS MÁXIMOS E TENSÃO
         max_M_kNm = np.max(np.abs(M_vetor))
-        max_M_Nm = max_M_kNm * 1000 # Conversão para Newtons-metro
-        
-        tensao_max_Pa = (max_M_Nm * c_val) / I_val
-        tensao_max_MPa = tensao_max_Pa / 1e6 # Conversão para MPa
-        
+        max_M_Nm = max_M_kNm * 1000 
+        tensao_max_MPa = ((max_M_Nm * c_val) / I_val) / 1e6 
         max_flecha = np.max(np.abs(y_vetor_mm))
         max_rotacao = np.max(np.abs(theta_vetor))
+
+        txt_metricas = [
+            f"Momento Maximo |M|: {max_M_kNm:.2f} kN.m",
+            f"Tensao Maxima de Flexao (sigma): {tensao_max_MPa:.1f} MPa",
+            f"Deflexao Maxima: {max_flecha:.2f} mm",
+            f"Rotacao Maxima (theta): {max_rotacao:.5f} rad"
+        ]
 
         st.write("### Esforços e Deslocamentos Máximos (Valores Absolutos)")
         c1, c2, c3, c4 = st.columns(4)
@@ -225,7 +282,7 @@ if st.button("🚀 Calcular Estrutura") and len(st.session_state.cargas_salvas) 
         c3.metric("Deflexão Máxima", f"{max_flecha:.2f} mm")
         c4.metric("Rotação Máxima (θ)", f"{max_rotacao:.5f} rad")
 
-        # --- PLOTAGEM DOS GRÁFICOS ---
+        # --- PLOTAGEM ---
         fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 12))
         
         ax1.plot(x_vetor, V_vetor, color='blue')
@@ -254,3 +311,14 @@ if st.button("🚀 Calcular Estrutura") and len(st.session_state.cargas_salvas) 
         
         plt.tight_layout()
         st.pyplot(fig)
+
+        # --- BOTÃO DE DOWNLOAD DO PDF ---
+        pdf_bytes = gerar_relatorio_pdf(fig, pd.DataFrame(st.session_state.cargas_salvas), txt_reacoes, txt_metricas)
+        st.write("---")
+        st.download_button(
+            label="📄 Baixar Relatório em PDF",
+            data=pdf_bytes,
+            file_name="Relatorio_Viga.pdf",
+            mime="application/pdf",
+            type="primary"
+        )
