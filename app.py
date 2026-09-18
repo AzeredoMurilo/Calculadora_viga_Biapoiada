@@ -176,7 +176,7 @@ def gerar_relatorio_pdf(fig_graficos, df_cargas, reacoes_texto, metricas_texto):
     pdf.cell(200, 10, txt="4. Diagramas Estruturais (V, M e Linha Elastica):", ln=True)
     pdf.image(img_buffer, x=10, y=30, w=190)
     
-    return pdf.output(dest='S').encode('latin-1')
+    return bytes(pdf.output())
 
 # ==========================================
 # 5. CÁLCULO E PLOTAGEM (BACKEND)
