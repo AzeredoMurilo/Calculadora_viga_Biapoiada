@@ -3,6 +3,8 @@ import pandas as pd
 import sympy as sp
 import numpy as np
 import matplotlib.pyplot as plt
+import plotly.graph_objects as go
+from plotly.subplots import make_subplots
 from sympy.physics.continuum_mechanics.beam import Beam
 import io
 from fpdf import FPDF
@@ -24,7 +26,7 @@ tipo_carga = st.sidebar.selectbox("Tipo de Carga",
 w1, w2, posicao_f = None, None, None
 
 if tipo_carga == "Triangular / Trapezoidal":
-    st.sidebar.markdown("*Para Triangular: deixe um dos valores como 0.*")
+    st.sidebar.markdown("*Para Triangular: deixe um valor como 0.*")
     w1 = st.sidebar.number_input("Magnitude Inicial w1 (kN/m)", value=0.0, step=1.0)
     w2 = st.sidebar.number_input("Magnitude Final w2 (kN/m)", value=-10.0, step=1.0)
     posicao_i = st.sidebar.number_input("Posição Inicial - x (m)", min_value=0.0, value=0.0, step=0.5)
@@ -62,42 +64,32 @@ I_input = 800.0
 if tipo_secao == "Entrada Manual":
     I_input = st.sidebar.number_input("Inércia I (cm⁴)", value=800.0, step=10.0)
     H_val = st.sidebar.number_input("Altura Total da Seção (mm)", value=200.0, step=10.0)
-
 elif tipo_secao == "Barra Maciça Retangular":
     H_val = st.sidebar.number_input("Altura H (mm)", value=100.0, step=10.0)
     B = st.sidebar.number_input("Base B (mm)", value=50.0, step=10.0)
-    H_c, B_c = H_val/10, B/10
-    I_input = (B_c * H_c**3)/12
+    I_input = ((B/10) * (H_val/10)**3)/12
     st.sidebar.info(f"📐 Inércia Calculada: {I_input:.2f} cm⁴")
-
 elif tipo_secao == "Barra Maciça Circular":
     H_val = st.sidebar.number_input("Diâmetro D (mm)", value=50.0, step=10.0)
-    D_c = H_val/10
-    I_input = (np.pi * D_c**4) / 64
+    I_input = (np.pi * (H_val/10)**4) / 64
     st.sidebar.info(f"📐 Inércia Calculada: {I_input:.2f} cm⁴")
-
 elif tipo_secao == "Perfil I / H":
     H_val = st.sidebar.number_input("Altura Total H (mm)", value=200.0, step=10.0)
     B = st.sidebar.number_input("Largura da Mesa B (mm)", value=100.0, step=10.0)
     tw = st.sidebar.number_input("Espessura da Alma tw (mm)", value=6.35, step=1.0)
     tf = st.sidebar.number_input("Espessura da Mesa tf (mm)", value=9.0, step=1.0)
-    H_c, B_c, tw_c, tf_c = H_val/10, B/10, tw/10, tf/10
-    I_input = (B_c * H_c**3)/12 - ((B_c - tw_c) * (H_c - 2*tf_c)**3)/12
+    I_input = ((B/10) * (H_val/10)**3)/12 - (((B/10) - (tw/10)) * ((H_val/10) - 2*(tf/10))**3)/12
     st.sidebar.info(f"📐 Inércia Calculada: {I_input:.2f} cm⁴")
-
 elif tipo_secao == "Tubo Retangular / Quadrado":
     H_val = st.sidebar.number_input("Altura Externa H (mm)", value=100.0, step=10.0)
     B = st.sidebar.number_input("Base Externa B (mm)", value=100.0, step=10.0)
     t = st.sidebar.number_input("Espessura da Parede t (mm)", value=5.0, step=1.0)
-    H_c, B_c, t_c = H_val/10, B/10, t/10
-    I_input = (B_c * H_c**3)/12 - ((B_c - 2*t_c) * (H_c - 2*t_c)**3)/12
+    I_input = ((B/10) * (H_val/10)**3)/12 - (((B/10) - 2*(t/10)) * ((H_val/10) - 2*(t/10))**3)/12
     st.sidebar.info(f"📐 Inércia Calculada: {I_input:.2f} cm⁴")
-
 elif tipo_secao == "Tubo Circular":
     H_val = st.sidebar.number_input("Diâmetro Externo D (mm)", value=114.3, step=10.0)
     t = st.sidebar.number_input("Espessura da Parede t (mm)", value=6.02, step=1.0)
-    D_c, t_c = H_val/10, t/10
-    I_input = (np.pi * (D_c**4 - (D_c - 2*t_c)**4)) / 64
+    I_input = (np.pi * ((H_val/10)**4 - ((H_val/10) - 2*(t/10))**4)) / 64
     st.sidebar.info(f"📐 Inércia Calculada: {I_input:.2f} cm⁴")
 
 E_val = E_input * 1e9  # Pa
@@ -108,7 +100,7 @@ c_val = (H_val / 1000) / 2 # Fibra extrema em metros
 # 3. TELA PRINCIPAL
 # ==========================================
 st.title("🏗️ Verificador Estrutural de Vigas")
-st.write("Cálculo de Esforços, Tensões, Deflexões e Rotação via SymPy")
+st.write("Cálculo de Esforços, Tensões, Deflexões e Rotação via SymPy + Plotly")
 
 col_comp, col_tipo = st.columns([1, 2])
 comprimento = col_comp.number_input("Comprimento total da viga (m)", min_value=1.0, value=10.0, step=1.0)
@@ -133,47 +125,47 @@ else:
     st.info("Nenhuma carga inserida. Use o menu lateral para adicionar.")
 
 # ==========================================
-# 4. FUNÇÃO DE GERAÇÃO DE PDF
+# 4. FUNÇÃO GERADORA DE PDF (Com Matplotlib interno)
 # ==========================================
-def gerar_relatorio_pdf(fig_graficos, df_cargas, reacoes_texto, metricas_texto):
+def gerar_relatorio_pdf(x_vetor, V_vetor, M_vetor, y_vetor_mm, df_cargas, reacoes_texto, metricas_texto):
+    # Gerando os gráficos estáticos silenciosamente na memória para o PDF
+    fig_mpl, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 10))
+    
+    ax1.plot(x_vetor, V_vetor, color='blue'); ax1.fill_between(x_vetor, V_vetor, 0, alpha=0.2, color='blue')
+    ax1.axhline(0, color='black', linewidth=1); ax1.set_title("Esforço Cortante (V)"); ax1.grid(True)
+    
+    ax2.plot(x_vetor, M_vetor, color='red'); ax2.fill_between(x_vetor, M_vetor, 0, alpha=0.2, color='red')
+    ax2.axhline(0, color='black', linewidth=1); ax2.invert_yaxis(); ax2.set_title("Momento Fletor (M)"); ax2.grid(True)
+
+    ax3.plot(x_vetor, y_vetor_mm, color='green'); ax3.fill_between(x_vetor, y_vetor_mm, 0, alpha=0.2, color='green')
+    ax3.axhline(0, color='black', linewidth=1); ax3.set_title("Deflexão (mm)"); ax3.grid(True)
+    
+    plt.tight_layout()
+    img_buffer = io.BytesIO()
+    fig_mpl.savefig(img_buffer, format='png', bbox_inches='tight')
+    img_buffer.seek(0)
+    plt.close(fig_mpl)
+
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Arial", 'B', 16)
     pdf.cell(200, 10, txt="Relatorio de Analise Estrutural", ln=True, align='C')
     
-    # Propriedades da Seção
     pdf.set_font("Arial", 'B', 12)
-    pdf.ln(10)
-    pdf.cell(200, 10, txt="1. Propriedades da Secao Transversal:", ln=True)
+    pdf.ln(5)
+    pdf.cell(200, 10, txt="1. Propriedades e Metricas Maximas:", ln=True)
     pdf.set_font("Arial", '', 11)
-    pdf.cell(200, 8, txt=f"Tipo de Secao: {tipo_secao}", ln=True)
-    pdf.cell(200, 8, txt=f"Modulo de Elasticidade (E): {E_input} GPa", ln=True)
-    pdf.cell(200, 8, txt=f"Momento de Inercia (I): {I_input:.2f} cm^4", ln=True)
-    pdf.cell(200, 8, txt=f"Altura Total (H): {H_val:.2f} mm", ln=True)
+    for m in metricas_texto: pdf.cell(200, 8, txt=m, ln=True)
 
-    # Reações
     pdf.set_font("Arial", 'B', 12)
     pdf.ln(5)
     pdf.cell(200, 10, txt="2. Reacoes de Apoio Encontradas:", ln=True)
     pdf.set_font("Arial", '', 11)
-    for r in reacoes_texto:
-        pdf.cell(200, 8, txt=r, ln=True)
-
-    # Métricas Máximas
-    pdf.set_font("Arial", 'B', 12)
-    pdf.ln(5)
-    pdf.cell(200, 10, txt="3. Esforcos e Deslocamentos Maximos Absolutos:", ln=True)
-    pdf.set_font("Arial", '', 11)
-    for m in metricas_texto:
-        pdf.cell(200, 8, txt=m, ln=True)
+    for r in reacoes_texto: pdf.cell(200, 8, txt=r, ln=True)
     
-    # Salvar gráficos na memória e jogar no PDF
-    img_buffer = io.BytesIO()
-    fig_graficos.savefig(img_buffer, format='png', bbox_inches='tight')
-    img_buffer.seek(0)
-    pdf.add_page() # Gráficos na segunda página para caber bem
+    pdf.add_page()
     pdf.set_font("Arial", 'B', 12)
-    pdf.cell(200, 10, txt="4. Diagramas Estruturais (V, M e Linha Elastica):", ln=True)
+    pdf.cell(200, 10, txt="3. Diagramas Estruturais (V, M e Linha Elastica):", ln=True)
     pdf.image(img_buffer, x=10, y=30, w=190)
     
     return bytes(pdf.output())
@@ -193,8 +185,7 @@ if st.button("🚀 Calcular Estrutura") and len(st.session_state.cargas_salvas) 
         reacoes_desconhecidas = []
         if tipo_viga == "Biapoiada nas extremidades":
             viga.bc_deflection = [(0, 0), (comprimento, 0)]
-            viga.apply_load(R_A, 0, -1)
-            viga.apply_load(R_B, comprimento, -1)
+            viga.apply_load(R_A, 0, -1); viga.apply_load(R_B, comprimento, -1)
             reacoes_desconhecidas = [R_A, R_B]
         elif tipo_viga == "Engastada à Esquerda (x=0)":
             viga.bc_deflection = [(0, 0)]; viga.bc_slope = [(0, 0)]
@@ -243,7 +234,6 @@ if st.button("🚀 Calcular Estrutura") and len(st.session_state.cargas_salvas) 
         y_vetor_m = np.ones_like(x_vetor) * func_y(x_vetor) if np.isscalar(func_y(x_vetor)) else func_y(x_vetor)
         y_vetor_mm = y_vetor_m * 1000 
         
-        # --- PREPARANDO DADOS PARA TELA E PDF ---
         txt_reacoes = []
         col_r1, col_r2, col_r3 = st.columns(3)
         if tipo_viga == "Engastada à Esquerda (x=0)":
@@ -263,16 +253,14 @@ if st.button("🚀 Calcular Estrutura") and len(st.session_state.cargas_salvas) 
             col_r2.success(f"**{txt_reacoes[1]}**")
 
         max_M_kNm = np.max(np.abs(M_vetor))
-        max_M_Nm = max_M_kNm * 1000 
-        tensao_max_MPa = ((max_M_Nm * c_val) / I_val) / 1e6 
+        tensao_max_MPa = (((max_M_kNm * 1000) * c_val) / I_val) / 1e6 
         max_flecha = np.max(np.abs(y_vetor_mm))
         max_rotacao = np.max(np.abs(theta_vetor))
 
         txt_metricas = [
-            f"Momento Maximo |M|: {max_M_kNm:.2f} kN.m",
-            f"Tensao Maxima de Flexao (sigma): {tensao_max_MPa:.1f} MPa",
-            f"Deflexao Maxima: {max_flecha:.2f} mm",
-            f"Rotacao Maxima (theta): {max_rotacao:.5f} rad"
+            f"Momento Maximo Absoluto: {max_M_kNm:.2f} kN.m",
+            f"Tensao Maxima de Flexao: {tensao_max_MPa:.1f} MPa",
+            f"Deflexao Maxima Absoluta: {max_flecha:.2f} mm"
         ]
 
         st.write("### Esforços e Deslocamentos Máximos (Valores Absolutos)")
@@ -282,38 +270,41 @@ if st.button("🚀 Calcular Estrutura") and len(st.session_state.cargas_salvas) 
         c3.metric("Deflexão Máxima", f"{max_flecha:.2f} mm")
         c4.metric("Rotação Máxima (θ)", f"{max_rotacao:.5f} rad")
 
-        # --- PLOTAGEM ---
-        fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(10, 12))
-        
-        ax1.plot(x_vetor, V_vetor, color='blue')
-        ax1.fill_between(x_vetor, V_vetor, 0, alpha=0.2, color='blue')
-        ax1.axhline(0, color='black', linewidth=1)
-        ax1.set_title("Diagrama de Esforço Cortante (V)")
-        ax1.set_ylabel("Força (kN)")
-        ax1.grid(True, linestyle='--', alpha=0.6)
-        
-        ax2.plot(x_vetor, M_vetor, color='red')
-        ax2.fill_between(x_vetor, M_vetor, 0, alpha=0.2, color='red')
-        ax2.axhline(0, color='black', linewidth=1)
-        ax2.invert_yaxis() 
-        ax2.set_title("Diagrama de Momento Fletor (M)")
-        ax2.set_ylabel("Momento (kN.m)")
-        ax2.grid(True, linestyle='--', alpha=0.6)
+        # ==========================================
+        # 6. PLOTAGEM INTERATIVA (PLOTLY)
+        # ==========================================
+        fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.08,
+                            subplot_titles=("Diagrama de Esforço Cortante (V)", 
+                                            "Diagrama de Momento Fletor (M)", 
+                                            "Linha Elástica / Deflexão"))
 
-        ax3.plot(x_vetor, y_vetor_mm, color='green')
-        ax3.fill_between(x_vetor, y_vetor_mm, 0, alpha=0.2, color='green')
-        ax3.axhline(0, color='black', linewidth=1)
-        #ax3.invert_yaxis() 
-        ax3.set_title("Linha Elástica / Deflexão")
-        ax3.set_ylabel("Deflexão (mm)")
-        ax3.set_xlabel("Posição x ao longo da viga (m)")
-        ax3.grid(True, linestyle='--', alpha=0.6)
-        
-        plt.tight_layout()
-        st.pyplot(fig)
+        # Cortante
+        fig.add_trace(go.Scatter(x=x_vetor, y=V_vetor, fill='tozeroy', mode='lines', 
+                                 line=dict(color='royalblue', width=2), name='Cortante (kN)'), row=1, col=1)
+        fig.update_yaxes(title_text="Força (kN)", zeroline=True, zerolinecolor='black', row=1, col=1)
 
-        # --- BOTÃO DE DOWNLOAD DO PDF ---
-        pdf_bytes = gerar_relatorio_pdf(fig, pd.DataFrame(st.session_state.cargas_salvas), txt_reacoes, txt_metricas)
+        # Momento (Invertido)
+        fig.add_trace(go.Scatter(x=x_vetor, y=M_vetor, fill='tozeroy', mode='lines', 
+                                 line=dict(color='firebrick', width=2), name='Momento (kN.m)'), row=2, col=1)
+        fig.update_yaxes(title_text="Momento (kN.m)", autorange="reversed", zeroline=True, zerolinecolor='black', row=2, col=1)
+
+        # Deflexão
+        fig.add_trace(go.Scatter(x=x_vetor, y=y_vetor_mm, fill='tozeroy', mode='lines', 
+                                 line=dict(color='seagreen', width=2), name='Deflexão (mm)'), row=3, col=1)
+        fig.update_yaxes(title_text="Deflexão (mm)", zeroline=True, zerolinecolor='black', row=3, col=1)
+        fig.update_xaxes(title_text="Posição x (m)", row=3, col=1)
+
+        # Configurações do layout geral
+        fig.update_layout(height=850, showlegend=False, hovermode="x unified",
+                          margin=dict(l=40, r=40, t=40, b=40))
+
+        st.plotly_chart(fig, use_container_width=True)
+
+        # ==========================================
+        # 7. BOTÃO DE DOWNLOAD DO PDF
+        # ==========================================
+        pdf_bytes = gerar_relatorio_pdf(x_vetor, V_vetor, M_vetor, y_vetor_mm, 
+                                        pd.DataFrame(st.session_state.cargas_salvas), txt_reacoes, txt_metricas)
         st.write("---")
         st.download_button(
             label="📄 Baixar Relatório em PDF",
