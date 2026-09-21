@@ -111,8 +111,8 @@ tipo_viga = col_tipo.selectbox("Selecione os Apoios:",
 pos_apoio1, pos_apoio2 = 0.0, float(comprimento)
 if tipo_viga == "Biapoiada Personalizada (com ou sem balanço)":
     colA, colB = st.columns(2)
-    pos_apoio1 = colA.number_input("Posição do Apoio 1 (x)", min_value=0.0, max_value=float(comprimento), value=2.0)
-    pos_apoio2 = colB.number_input("Posição do Apoio 2 (x)", min_value=0.0, max_value=float(comprimento), value=8.0)
+    pos_apoio1 = colA.number_input("Posição do Apoio 1 (x)", min_value=0.0, max_value=float(comprimento), value=min(2.0, float(comprimento)))
+    pos_apoio2 = colB.number_input("Posição do Apoio 2 (x)", min_value=0.0, max_value=float(comprimento), value=min(8.0, float(comprimento)))
 
 st.write("---")
 if len(st.session_state.cargas_salvas) > 0:
