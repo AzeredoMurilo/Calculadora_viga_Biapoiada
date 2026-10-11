@@ -67,8 +67,9 @@ if sis == "Métrico (SI)":
     u_L, u_F, u_M, u_q, u_sec, u_A, u_I, u_E, u_stress, u_defl = "m", "kN", "kN.m", "kN/m", "mm", "cm²", "cm⁴", "GPa", "MPa", "mm"
     f_pos, f_F, f_M, f_q, f_sec, f_I, f_E, f_Sy = 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0
 else:
-    u_L, u_F, u_M, u_q, u_sec, u_A, u_I, u_E, u_stress, u_defl = "ft", "kip", "kip.ft", "kip/ft", "in", "in²", "in⁴", "ksi", "ksi", "in"
-    f_pos, f_F, f_M, f_q = 0.3048, 4.4482216, 1.3558179, 14.5939029
+    # --- ALTERAÇÃO PARA POLEGADAS NO SISTEMA IMPERIAL ---
+    u_L, u_F, u_M, u_q, u_sec, u_A, u_I, u_E, u_stress, u_defl = "in", "kip", "kip.in", "kip/in", "in", "in²", "in⁴", "ksi", "ksi", "in"
+    f_pos, f_F, f_M, f_q = 0.0254, 4.4482216, 0.1129848, 175.126835
     f_sec, f_I, f_E, f_Sy = 25.4, 41.62314, 0.006894757, 6.894757
 
 # ==========================================
@@ -186,16 +187,16 @@ if modulo_selecionado == "1. Flexão Transversal (Vigas)":
     w1, w2, posicao_f = None, None, None
 
     if tipo_carga == "Triangular / Trapezoidal":
-        w1 = st.sidebar.number_input(f"Magnitude Inicial w1 ({u_q})", value=0.0, step=1.0)
-        w2 = st.sidebar.number_input(f"Magnitude Final w2 ({u_q})", value=-10.0 if sis=="Métrico (SI)" else -1.0, step=1.0)
-        posicao_i = st.sidebar.number_input(f"Posição Inicial - x ({u_L})", min_value=0.0, value=0.0, step=0.5)
-        posicao_f = st.sidebar.number_input(f"Posição Final - x ({u_L})", min_value=posicao_i+0.01, value=posicao_i+(3.0 if sis=="Métrico (SI)" else 10.0), step=0.5)
+        w1 = st.sidebar.number_input(f"Magnitude Inicial w1 ({u_q})", value=0.0, step=1.0 if sis=="Métrico (SI)" else 0.1)
+        w2 = st.sidebar.number_input(f"Magnitude Final w2 ({u_q})", value=-10.0 if sis=="Métrico (SI)" else -0.5, step=1.0 if sis=="Métrico (SI)" else 0.1)
+        posicao_i = st.sidebar.number_input(f"Posição Inicial - x ({u_L})", min_value=0.0, value=0.0, step=0.5 if sis=="Métrico (SI)" else 6.0)
+        posicao_f = st.sidebar.number_input(f"Posição Final - x ({u_L})", min_value=posicao_i+0.01, value=posicao_i+(3.0 if sis=="Métrico (SI)" else 120.0), step=0.5 if sis=="Métrico (SI)" else 6.0)
         valor_exibicao = f"{w1} até {w2}"
     else:
         valor = st.sidebar.number_input(f"Magnitude ({u_F} ou {u_M})", value=-10.0 if sis=="Métrico (SI)" else -2.0, step=1.0)
-        posicao_i = st.sidebar.number_input(f"Posição Inicial - x ({u_L})", min_value=0.0, value=2.0 if sis=="Métrico (SI)" else 5.0, step=0.5)
+        posicao_i = st.sidebar.number_input(f"Posição Inicial - x ({u_L})", min_value=0.0, value=2.0 if sis=="Métrico (SI)" else 60.0, step=0.5 if sis=="Métrico (SI)" else 6.0)
         if tipo_carga == "Distribuída (Uniforme)":
-            posicao_f = st.sidebar.number_input(f"Posição Final - x ({u_L})", min_value=posicao_i+0.01, value=posicao_i+(2.0 if sis=="Métrico (SI)" else 5.0), step=0.5)
+            posicao_f = st.sidebar.number_input(f"Posição Final - x ({u_L})", min_value=posicao_i+0.01, value=posicao_i+(2.0 if sis=="Métrico (SI)" else 60.0), step=0.5 if sis=="Métrico (SI)" else 6.0)
         valor_exibicao = valor
 
     if st.sidebar.button("➕ Adicionar Carga"):
@@ -210,14 +211,14 @@ if modulo_selecionado == "1. Flexão Transversal (Vigas)":
 
     st.title("🏗️ Módulo de Flexão de Vigas")
     col_comp, col_tipo = st.columns([1, 2])
-    comprimento_ui = col_comp.number_input(f"Comprimento L ({u_L})", min_value=0.01, value=10.0 if sis=="Métrico (SI)" else 30.0, step=0.005)
+    comprimento_ui = col_comp.number_input(f"Comprimento L ({u_L})", min_value=0.01, value=10.0 if sis=="Métrico (SI)" else 360.0, step=0.005 if sis=="Métrico (SI)" else 1.0)
     tipo_viga = col_tipo.selectbox("Apoios:", ["Biapoiada nas extremidades", "Engastada à Esquerda (x=0)", "Biapoiada Personalizada (com ou sem balanço)"])
 
     pos_apoio1_ui, pos_apoio2_ui = 0.0, float(comprimento_ui)
     if tipo_viga == "Biapoiada Personalizada (com ou sem balanço)":
         cA, cB = st.columns(2)
-        pos_apoio1_ui = cA.number_input(f"Apoio 1 (x em {u_L})", min_value=0.0, max_value=float(comprimento_ui), value=min((2.0 if sis=="Métrico (SI)" else 5.0), float(comprimento_ui)))
-        pos_apoio2_ui = cB.number_input(f"Apoio 2 (x em {u_L})", min_value=0.0, max_value=float(comprimento_ui), value=min((8.0 if sis=="Métrico (SI)" else 25.0), float(comprimento_ui)))
+        pos_apoio1_ui = cA.number_input(f"Apoio 1 (x em {u_L})", min_value=0.0, max_value=float(comprimento_ui), value=min((2.0 if sis=="Métrico (SI)" else 60.0), float(comprimento_ui)))
+        pos_apoio2_ui = cB.number_input(f"Apoio 2 (x em {u_L})", min_value=0.0, max_value=float(comprimento_ui), value=min((8.0 if sis=="Métrico (SI)" else 300.0), float(comprimento_ui)))
 
     comprimento, pos_apoio1, pos_apoio2 = comprimento_ui * f_pos, pos_apoio1_ui * f_pos, pos_apoio2_ui * f_pos
 
@@ -375,7 +376,8 @@ if modulo_selecionado == "1. Flexão Transversal (Vigas)":
             idx_max_Y = np.argmax(np.abs(y_vetor_mm))
             pos_Y_max, max_flecha = x_vetor[idx_max_Y], np.abs(y_vetor_mm)[idx_max_Y]
             
-            out_L, out_F, out_M, out_stress, out_defl = 1.0/f_pos, 1.0/f_F, 1.0/f_M, (1.0/6.894757 if sis=="Imperial (US)" else 1.0), (1.0/25.4 if sis=="Imperial (US)" else 1.0)
+            # --- CONVERSÃO INVERSA PARA UI ---
+            out_L, out_F, out_M, out_stress, out_defl = 1.0/f_pos, 1.0/f_F, 1.0/f_M, (1.0/f_Sy if sis=="Imperial (US)" else 1.0), (1.0/25.4 if sis=="Imperial (US)" else 1.0)
             
             txt_reacoes = []
             if tipo_viga == "Engastada à Esquerda (x=0)":
@@ -433,7 +435,7 @@ elif modulo_selecionado == "2. Flambagem Axial (Colunas)":
     st.sidebar.markdown("---")
     st.sidebar.header("Carga e Fixação")
     
-    comprimento_coluna_ui = st.sidebar.number_input(f"Comprimento da Coluna L ({u_L})", min_value=0.01, value=3.0 if sis=="Métrico (SI)" else 10.0, step=0.1)
+    comprimento_coluna_ui = st.sidebar.number_input(f"Comprimento da Coluna L ({u_L})", min_value=0.01, value=3.0 if sis=="Métrico (SI)" else 120.0, step=0.1 if sis=="Métrico (SI)" else 1.0)
     condicao_apoio = st.sidebar.selectbox("Fator K", ["Articulado - Articulado (K = 1.0)", "Engastado - Livre / Poste (K = 2.0)", "Engastado - Engastado (K = 0.5)", "Engastado - Articulado (K = 0.7)"])
     carga_axial_ui = st.sidebar.number_input(f"Carga de Compressão P ({u_F})", min_value=0.0, value=100.0 if sis=="Métrico (SI)" else 20.0, step=10.0)
 
@@ -472,7 +474,7 @@ elif modulo_selecionado == "2. Flambagem Axial (Colunas)":
                 P_cr_N, raio_giracao, tensao_critica_Pa = 0.0, 0.0, 0.0
                 
             out_F = 1.0 / f_F
-            out_stress = 1.0 / 6.894757 if sis == "Imperial (US)" else 1.0
+            out_stress = 1.0 / f_Sy if sis == "Imperial (US)" else 1.0
             
             P_cr_disp, carga_aplicada_kN = P_cr_kN * out_F, carga_axial_ui / out_F
             tensao_cr_disp, Sy_disp = tensao_critica_MPa * out_stress, (Sy_val / 1e6) * out_stress
